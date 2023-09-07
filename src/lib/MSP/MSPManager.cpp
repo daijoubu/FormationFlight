@@ -33,8 +33,11 @@ uint8_t MSPManager::getState()
         return 0;
     }
     uint32_t modes;
-    msp->getActiveModes(&modes);
-    return bitRead(modes, 0);
+    if (msp->getActiveModes(&modes))
+    {
+        return bitRead(modes, 0);
+    }
+    return 0;
 }
 
 // Requests the name of the flight controller over MSP without caching
@@ -92,7 +95,7 @@ bool MSPManager::hostIsFlightController(MSPHost host)
     return (host == HOST_INAV || host == HOST_ARDU || host == HOST_BTFL);
 }
 
-// Returns the FC's version, cached after the first positive response we get
+// Returns the FC's version, cached after the first positive response we get, will be all-zero if the request failed
 msp_fc_version_t MSPManager::getFCVersion()
 {
     static msp_fc_version_t version;
@@ -102,6 +105,11 @@ msp_fc_version_t MSPManager::getFCVersion()
         return version;
     }
     cached = msp->request(MSP_FC_VERSION, &version, sizeof(version));
+    if (!cached)
+    {
+        //MSP call failed, zero out the data.
+        memset(&version, 0, sizeof(version));
+    }
     return version;
 }
 
