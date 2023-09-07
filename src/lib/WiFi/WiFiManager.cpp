@@ -82,11 +82,15 @@ WiFiManager::WiFiManager()
     });
     // PeerManager
     server->on("/peermanager/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        StaticJsonDocument<1024> doc;
+        StaticJsonDocument<2048> doc;
         PeerManager::getSingleton()->statusJson(&doc);
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
         request->send(response);
+    });
+    server->on("/peermanager/spoof", HTTP_POST, [](AsyncWebServerRequest *request) {
+        PeerManager::getSingleton()->enableSpoofing(true);
+        request->send(200, "text/plain", "OK");
     });
     // MSPManager
     server->on("/mspmanager/status", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -95,10 +99,6 @@ WiFiManager::WiFiManager()
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         serializeJson(doc, *response);
         request->send(response);
-    });
-    server->on("/mspmanager/spoof", HTTP_POST, [](AsyncWebServerRequest *request) {
-        MSPManager::getSingleton()->enableSpoofing(true);
-        request->send(200, "text/plain", "OK");
     });
     // GNSSManager
     server->on("/gnssmanager/status", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -117,6 +117,11 @@ WiFiManager::WiFiManager()
         double lon = request->getParam("lon", true)->value().toDouble();
         GNSSManager::getSingleton()->spoofedLocation.lat = lat;
         GNSSManager::getSingleton()->spoofedLocation.lon = lon;
+        GNSSManager::getSingleton()->spoofedLocation.fixType = GNSS_FIX_TYPE_3D;
+        GNSSManager::getSingleton()->spoofedLocation.alt = 42000; // cm
+        GNSSManager::getSingleton()->spoofedLocation.numSat = 42;
+        GNSSManager::getSingleton()->spoofedLocation.hdop = 0.69;
+        GNSSManager::getSingleton()->spoofLocationEnabled = true;
 
         request->send(200, "text/plain", "OK");
     });
@@ -270,8 +275,13 @@ void handleFileUploadResponse(AsyncWebServerRequest *request)
 void handleFileUploadData(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
 {
     OTAResult *r = WiFiManager::getSingleton()->getOTAResult();
-    if (!filename.endsWith(".bin") && !filename.endsWith(".elf")) {
-        r->message = "must upload .bin or .elf";
+#ifdef PLATFORM_ESP8266
+    if (!filename.endsWith(".bin") && !filename.endsWith(".bin.gz")) {
+        r->message = "must upload .bin or .bin.gz";
+#elif defined(PLATFORM_ESP32)
+    if (!filename.endsWith(".bin")) {
+        r->message = "must upload .bin";
+#endif
         r->statusCode = 400;
         return;
     }
